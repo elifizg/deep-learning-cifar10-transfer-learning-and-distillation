@@ -1,3 +1,4 @@
+import copy
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -31,7 +32,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device, log_interval):
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item() * imgs.size(0)
+        total_loss += loss.detach().item() * imgs.size(0)
         correct    += out.argmax(1).eq(labels).sum().item()
         n          += imgs.size(0)
 
@@ -42,17 +43,17 @@ def train_one_epoch(model, loader, optimizer, criterion, device, log_interval):
     return total_loss / n, correct / n
 
 
-@torch.no_grad()
 def validate(model, loader, criterion, device):
     model.eval()
     total_loss, correct, n = 0.0, 0, 0
-    for imgs, labels in loader:
-        imgs, labels = imgs.to(device), labels.to(device)
-        out  = model(imgs)
-        loss = criterion(out, labels)
-        total_loss += loss.item() * imgs.size(0)
-        correct    += out.argmax(1).eq(labels).sum().item()
-        n          += imgs.size(0)
+    with torch.no_grad():
+        for imgs, labels in loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            out  = model(imgs)
+            loss = criterion(out, labels)
+            total_loss += loss.detach().item() * imgs.size(0)
+            correct    += out.argmax(1).eq(labels).sum().item()
+            n          += imgs.size(0)
     return total_loss / n, correct / n
 
 
@@ -64,7 +65,9 @@ def run_training(model, params, device):
                                  weight_decay=params["weight_decay"])
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
-    best_acc = 0.0
+    best_acc     = 0.0
+    best_weights = None
+
     for epoch in range(1, params["epochs"] + 1):
         print(f"\nEpoch {epoch}/{params['epochs']}")
         tr_loss, tr_acc = train_one_epoch(model, train_loader, optimizer,
@@ -76,8 +79,11 @@ def run_training(model, params, device):
         print(f"  Val   loss: {val_loss:.4f}  acc: {val_acc:.4f}")
 
         if val_acc > best_acc:
-            best_acc = val_acc
-            torch.save(model.state_dict(), params["save_path"])
-            print(f"  ✓ Saved best model (val_acc={best_acc:.4f})")
+            best_acc     = val_acc
+            best_weights = copy.deepcopy(model.state_dict())  # snapshot in memory
+            torch.save(best_weights, params["save_path"])      # persist to disk
+            print(f" Saved best model (val_acc={best_acc:.4f})")
 
+    # Restore best weights into the model before returning
+    model.load_state_dict(best_weights)
     print(f"\nTraining done. Best val accuracy: {best_acc:.4f}")

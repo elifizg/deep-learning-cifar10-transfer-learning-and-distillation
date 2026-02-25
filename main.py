@@ -1,17 +1,15 @@
-import argparse
 import random
 import ssl
 import numpy as np
 import torch
 
-
-from parameters import PARAMS
+from parameters import get_params
 from models.MLP import MLP
 from train import run_training
 from test  import run_test
 
 
-#Fix for macOS SSL certificate verification error when downloading MNIST
+# Fix for macOS SSL certificate verification error when downloading MNIST
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
@@ -34,35 +32,26 @@ def build_model(params):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="MLP on MNIST")
-    parser.add_argument("--mode",   choices=["train", "test", "both"],
-                        default="both", help="Run mode")
-    parser.add_argument("--epochs", type=int,   default=None)
-    parser.add_argument("--lr",     type=float, default=None)
-    parser.add_argument("--device", type=str,   default=None)
-    args = parser.parse_args()
+    params = get_params()
 
-    # Allow CLI overrides
-    if args.epochs: PARAMS["epochs"]        = args.epochs
-    if args.lr:     PARAMS["learning_rate"] = args.lr
-    if args.device: PARAMS["device"]        = args.device
-
-    set_seed(PARAMS["seed"])
-    print(f"Seed set to: {PARAMS['seed']}")
+    set_seed(params["seed"])
+    print(f"Seed set to: {params['seed']}")
 
     device = torch.device(
-        PARAMS["device"] if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+        params["device"] if torch.cuda.is_available() else
+        "mps" if torch.backends.mps.is_available() else
+        "cpu"
     )
     print(f"Using device: {device}")
 
-    model = build_model(PARAMS).to(device)
+    model = build_model(params).to(device)
     print(model)
 
-    if args.mode in ("train", "both"):
-        run_training(model, PARAMS, device)
+    if params["mode"] in ("train", "both"):
+        run_training(model, params, device)
 
-    if args.mode in ("test", "both"):
-        run_test(model, PARAMS, device)
+    if params["mode"] in ("test", "both"):
+        run_test(model, params, device)
 
 
 if __name__ == "__main__":
