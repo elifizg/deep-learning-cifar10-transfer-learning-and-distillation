@@ -1,85 +1,127 @@
+"""
+models/CNN.py
+=============
+Convolutional Neural Networks for image classification.
+
+  MNIST_CNN  — two conv layers for single-channel 28x28 input (MNIST).
+  SimpleCNN  — two conv layers for three-channel 32x32 input (CIFAR-10),
+               with Kaiming (He) weight initialisation.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class MNIST_CNN(nn.Module):
+    """
+    Lightweight CNN for MNIST (1-channel, 28x28 images).
 
-    def __init__(self,norm,num_classes=10):
-        super(MNIST_CNN, self).__init__() 
-        self.conv1 = nn.Conv2d(1, 20, 5, 1) #format: (in_channels, out_channels, kernel_size, stride)
-        self.conv2 = nn.Conv2d(20, 50, 5, 1) 
-        self.fc1 = nn.Linear(4 * 4 * 50, 500) # assuming input images are 28x28, after two conv+pool layers we get 4x4 feature maps
-        self.fc2 = nn.Linear(500, num_classes)
+    Spatial flow:
+        Input  : (B,  1, 28, 28)
+        conv1  : (B, 20, 24, 24)   formula: (28 - 5) / 1 + 1 = 24
+        pool1  : (B, 20, 12, 12)   kernel=2, stride=2
+        conv2  : (B, 50,  8,  8)   formula: (12 - 5) / 1 + 1 = 8
+        pool2  : (B, 50,  4,  4)   kernel=2, stride=2
+        flatten: (B, 800)
+        fc1    : (B, 500)
+        fc2    : (B, num_classes)
 
-    def forward(self, x):
-        # formula for output size: (W - F + 2P) / S + 1, where W=input size, F=filter size, P=padding, S=stride
-        x = F.relu(self.conv1(x)) # (28 - 5 + 2*0) / 1 + 1 = 24
-        x = F.max_pool2d(x, 2, 2) # (24 - 2) / 2 + 1 = 12
-        x = F.relu(self.conv2(x)) # (12 - 5 + 2*0) / 1 + 1 = 8
-        x = F.max_pool2d(x, 2, 2) # (8 - 2) / 2 + 1 = 4, so we have 50 feature maps of size 4x4
-        x = x.view(-1, 4 * 4 * 50)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
+    Args:
+        num_classes: Number of output classes (default 10 for MNIST).
+    """
+
+    def __init__(self, num_classes: int = 10) -> None:
+        super().__init__()
+        # (in_channels, out_channels, kernel_size, stride)
+        self.conv1 = nn.Conv2d(1, 20, kernel_size=5, stride=1)
+        self.conv2 = nn.Conv2d(20, 50, kernel_size=5, stride=1)
+        self.fc1   = nn.Linear(4 * 4 * 50, 500)
+        self.fc2   = nn.Linear(500, num_classes)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor, shape (B, 1, 28, 28).
+
+        Returns:
+            torch.Tensor: Class logits, shape (B, num_classes).
+        """
+        x = F.relu(self.conv1(x))      # -> (B, 20, 24, 24)
+        x = F.max_pool2d(x, 2, 2)      # -> (B, 20, 12, 12)
+        x = F.relu(self.conv2(x))      # -> (B, 50,  8,  8)
+        x = F.max_pool2d(x, 2, 2)      # -> (B, 50,  4,  4)
+        x = x.view(x.size(0), -1)      # -> (B, 800)
+        x = F.relu(self.fc1(x))        # -> (B, 500)
+        return self.fc2(x)             # -> (B, num_classes)
 
 
 class SimpleCNN(nn.Module):
     """
-    Example of CNN architecture with Kaiming (He) initialization applied.
+    Two-layer CNN for CIFAR-10 (3-channel, 32x32 images).
+
+    Uses Kaiming (He) initialisation for all Conv2d and Linear weights.
+
+    Kaiming initialisation (for ReLU):
+        w ~ N(0, sqrt(2 / fan_in))
+
+    The factor 2 compensates for ReLU zeroing roughly half of all activations,
+    which would otherwise halve the signal variance at each layer.  Without
+    this correction, activations in deep networks either vanish or explode.
+    fan_in mode bases the scale on the number of input connections, which
+    is the standard choice when the forward signal stability matters more
+    than the backward signal.
+
+    Spatial flow:
+        Input  : (B,  3, 32, 32)
+        conv1  : (B, 32, 32, 32)   padding=1 preserves spatial size
+        pool1  : (B, 32, 16, 16)
+        conv2  : (B, 64, 16, 16)   padding=1 preserves spatial size
+        pool2  : (B, 64,  8,  8)
+        flatten: (B, 4096)
+        fc1    : (B, 128)
+        fc2    : (B, num_classes)
+
+    Args:
+        num_classes: Number of output classes (default 10 for CIFAR-10).
     """
-    def __init__(self, num_classes=10):
-        super(SimpleCNN, self).__init__()
-        
-        # Convolutional layers
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
+
+    def __init__(self, num_classes: int = 10) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels=3,  out_channels=32, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
-        
-        # Fully connected layers
-        self.fc1 = nn.Linear(64 * 8 * 8, 128)  # assuming input images 32x32
-        self.fc2 = nn.Linear(128, num_classes)
-
-        # Apply Kaiming initialization
+        self.fc1   = nn.Linear(64 * 8 * 8, 128)
+        self.fc2   = nn.Linear(128, num_classes)
         self._initialize_weights()
-        
+
+    def _initialize_weights(self) -> None:
         """
-        Kaiming initialization is typically applied to convolutional and linear layers when using ReLU activations.
-        It helps maintain the variance of activations through the layers, which can lead to better convergence during training.
-        For convolutional layers, we use 'fan_in' mode, which considers the number of input units to the layer.
-        'fan_out' mode can also be used if you want to consider the number of output units, but 'fan_in' is more common for ReLU.
-        In practice, 'fan_in' is often preferred for ReLU activations because it helps prevent the variance from exploding as we go deeper into the network.
+        Apply Kaiming normal initialisation to all Conv2d and Linear layers.
 
-        Formula for Kaiming initialization (for ReLU):
-        weight ~ N(0, sqrt(2 / fan_in))
-
-        2.0 is the ReLU correction factor. ReLU zeros out ~half of all activations
-        (anything negative), which halves the signal variance at each layer.
-        Doubling the initial variance compensates for this, keeping the signal stable.
-
+        Biases are zeroed so that all neurons start with the same offset,
+        preventing any artificial symmetry breaking in the bias direction.
         """
-
-    def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
-                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+                nn.init.kaiming_normal_(m.weight, mode="fan_in", nonlinearity="relu")
                 nn.init.zeros_(m.bias)
 
-    def forward(self, x):
-        # Conv layers + ReLU + MaxPool
-        x = F.relu(self.conv1(x)) # 32 - 3 + 2*1 = 32 ((padding=1 keeps size))
-        x = F.max_pool2d(x, 2)  # 32x32 -> 16x16
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor, shape (B, 3, 32, 32).
 
-        x = F.relu(self.conv2(x)) # 16 - 3 + 2*1 = 16 (padding=1 keeps size)
-        x = F.max_pool2d(x, 2)  # 16x16 -> 8x8
-
-        # Flatten
-        x = x.view(x.size(0), -1)
-
-        # Fully connected layers
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)  # output logits
-
-        return x
+        Returns:
+            torch.Tensor: Class logits, shape (B, num_classes).
+        """
+        x = F.relu(self.conv1(x))   # -> (B, 32, 32, 32)
+        x = F.max_pool2d(x, 2)      # -> (B, 32, 16, 16)
+        x = F.relu(self.conv2(x))   # -> (B, 64, 16, 16)
+        x = F.max_pool2d(x, 2)      # -> (B, 64,  8,  8)
+        x = x.view(x.size(0), -1)   # -> (B, 4096)
+        x = F.relu(self.fc1(x))     # -> (B, 128)
+        return self.fc2(x)          # -> (B, num_classes)

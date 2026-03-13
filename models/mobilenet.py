@@ -1,120 +1,184 @@
-'''MobileNetV2 in PyTorch.
+"""
+models/mobilenet.py
+===================
+MobileNetV2 adapted for CIFAR-10 (3-channel, 32x32 images).
 
-See the paper "Inverted Residuals and Linear Bottlenecks:
-Mobile Networks for Classification, Detection and Segmentation" for more details.
-'''
+Reference:
+    Sandler et al., "MobileNetV2: Inverted Residuals and Linear Bottlenecks",
+    CVPR 2018.  https://arxiv.org/abs/1801.04381
+
+Key design principle — Inverted Residual Block:
+    Standard residual blocks expand channels in the middle (narrow->wide->narrow).
+    MobileNetV2 inverts this: it starts narrow, expands wide for depthwise conv,
+    then projects back to narrow.  The wide intermediate representation is never
+    stored in memory across the residual connection, reducing peak memory usage.
+
+    Each block:
+        1. Pointwise conv (1x1): expand channels by factor t  (cheap, mixes channels)
+        2. Depthwise conv (3x3, groups=channels): spatial filtering (very cheap)
+        3. Pointwise conv (1x1): project back to out_planes    (cheap, mixes channels)
+        No ReLU after step 3 — the "linear bottleneck" preserves information
+        in low-dimensional spaces that ReLU would otherwise destroy.
+
+CIFAR-10 adaptations vs the original ImageNet MobileNetV2:
+    - conv1 stride 2 -> 1  (keeps 32x32 instead of reducing to 16x16 immediately)
+    - Stage 2 stride 2 -> 1
+    - Final avg pool kernel 7 -> 4  (matches the 4x4 feature map size)
+"""
+
+from typing import List, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 
 class Block(nn.Module):
-    '''expand + depthwise + pointwise'''
-    def __init__(self, in_planes, out_planes, expansion, stride):
-        super(Block, self).__init__()
+    """
+    Inverted Residual Block (the core building unit of MobileNetV2).
+
+    Structure:
+        expand  : Conv1x1(in_planes -> t*in_planes) + BN + ReLU6
+        depthwise: Conv3x3(t*in_planes, groups=t*in_planes) + BN + ReLU6
+        project : Conv1x1(t*in_planes -> out_planes) + BN   (NO ReLU)
+        shortcut: identity if stride==1 and in_planes==out_planes,
+                  else 1x1 conv if stride==1 and channels differ.
+
+    ReLU6 clips activations at 6, which is important for fixed-point
+    quantisation (e.g. running on mobile CPUs with 8-bit arithmetic).
+
+    The skip connection is only applied when stride==1 because a stride>1
+    depthwise conv changes the spatial resolution, making a residual addition
+    between input and output impossible without a projection.
+
+    Args:
+        in_planes:  Number of input channels.
+        out_planes: Number of output channels.
+        expansion:  Channel expansion factor t for the intermediate representation.
+        stride:     Depthwise conv stride (1 = same size, 2 = halve spatial dims).
+    """
+
+    def __init__(
+        self,
+        in_planes:  int,
+        out_planes: int,
+        expansion:  int,
+        stride:     int,
+    ) -> None:
+        super().__init__()
         self.stride = stride
-
         planes = expansion * in_planes
-        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, groups=planes, bias=False) #The `groups=planes` argument is what makes it depthwise, each channel gets its own filter.
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn3 = nn.BatchNorm2d(out_planes)
 
-        self.shortcut = nn.Sequential()
+        # Step 1: expand channels with pointwise conv.
+        self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1,
+                               stride=1, padding=0, bias=False)
+        self.bn1   = nn.BatchNorm2d(planes)
+
+        # Step 2: depthwise conv — each channel filtered independently.
+        # groups=planes means each channel has its own 3x3 filter.
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
+                               stride=stride, padding=1, groups=planes, bias=False)
+        self.bn2   = nn.BatchNorm2d(planes)
+
+        # Step 3: project back to out_planes — linear bottleneck (no ReLU).
+        self.conv3 = nn.Conv2d(planes, out_planes, kernel_size=1,
+                               stride=1, padding=0, bias=False)
+        self.bn3   = nn.BatchNorm2d(out_planes)
+
+        # Shortcut: only when stride==1; may need 1x1 conv for channel mismatch.
+        self.shortcut: nn.Module = nn.Sequential()
         if stride == 1 and in_planes != out_planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=1, padding=0, bias=False),
+                nn.Conv2d(in_planes, out_planes, kernel_size=1,
+                          stride=1, padding=0, bias=False),
                 nn.BatchNorm2d(out_planes),
             )
 
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = F.relu(self.bn2(self.conv2(out)))
-        out = self.bn3(self.conv3(out))
-        out = out + self.shortcut(x) if self.stride==1 else out
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor, shape (B, in_planes, H, W).
+
+        Returns:
+            torch.Tensor: Output tensor, shape (B, out_planes, H_out, W_out).
+        """
+        out = F.relu6(self.bn1(self.conv1(x)))
+        out = F.relu6(self.bn2(self.conv2(out)))
+        out = self.bn3(self.conv3(out))          # linear bottleneck — no activation
+
+        # Add skip connection only when spatial size is unchanged (stride==1).
+        if self.stride == 1:
+            out = out + self.shortcut(x)
         return out
 
 
 class MobileNetV2(nn.Module):
-    # (expansion, out_planes, num_blocks, stride)
-    cfg = [(1,  16, 1, 1),
-           (6,  24, 2, 1),  # NOTE: change stride 2 -> 1 for CIFAR10
-           (6,  32, 3, 2),
-           (6,  64, 4, 2),
-           (6,  96, 3, 1),
-           (6, 160, 3, 2),
-           (6, 320, 1, 1)]
+    """
+    MobileNetV2 for CIFAR-10 classification.
 
-    def __init__(self, num_classes=10):
-        super(MobileNetV2, self).__init__()
-        # NOTE: change conv1 stride 2 -> 1 for CIFAR10
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(32)
+    Stage configuration: (expansion t, out_channels, num_blocks, stride)
+    Strides in stages 1 and 2 are reduced to 1 (vs 2 in the ImageNet version)
+    to prevent the 32x32 feature maps from collapsing too early.
+
+    Args:
+        num_classes: Number of output classes (default 10 for CIFAR-10).
+    """
+
+    # (expansion, out_planes, num_blocks, stride)
+    _CFG: List[Tuple[int, int, int, int]] = [
+        (1,  16, 1, 1),
+        (6,  24, 2, 1),   # stride 2->1 for CIFAR-10
+        (6,  32, 3, 2),
+        (6,  64, 4, 2),
+        (6,  96, 3, 1),
+        (6, 160, 3, 2),
+        (6, 320, 1, 1),
+    ]
+
+    def __init__(self, num_classes: int = 10) -> None:
+        super().__init__()
+        # Stem: stride=1 for CIFAR-10 (ImageNet uses stride=2).
+        self.conv1  = nn.Conv2d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1    = nn.BatchNorm2d(32)
         self.layers = self._make_layers(in_planes=32)
-        self.conv2 = nn.Conv2d(320, 1280, kernel_size=1, stride=1, padding=0, bias=False)
-        self.bn2 = nn.BatchNorm2d(1280)
+
+        # Pointwise conv to project to 1280 channels before classification.
+        self.conv2  = nn.Conv2d(320, 1280, kernel_size=1, stride=1, padding=0, bias=False)
+        self.bn2    = nn.BatchNorm2d(1280)
         self.linear = nn.Linear(1280, num_classes)
 
-    def _make_layers(self, in_planes):
-        layers = []
-        for expansion, out_planes, num_blocks, stride in self.cfg:
-            strides = [stride] + [1]*(num_blocks-1)
-            for stride in strides:
-                layers.append(Block(in_planes, out_planes, expansion, stride))
+    def _make_layers(self, in_planes: int) -> nn.Sequential:
+        """
+        Build all inverted residual stages from the config table.
+
+        For each stage with num_blocks > 1, only the first block uses the
+        specified stride; all subsequent blocks use stride=1.
+
+        Args:
+            in_planes: Input channels for the first block (32 after the stem).
+
+        Returns:
+            nn.Sequential: All inverted residual blocks in order.
+        """
+        layers: List[nn.Module] = []
+        for expansion, out_planes, num_blocks, stride in self._CFG:
+            strides = [stride] + [1] * (num_blocks - 1)
+            for s in strides:
+                layers.append(Block(in_planes, out_planes, expansion, s))
                 in_planes = out_planes
         return nn.Sequential(*layers)
 
-    def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.layers(out)
-        out = F.relu(self.bn2(self.conv2(out)))
-        # NOTE: change pooling kernel_size 7 -> 4 for CIFAR10
-        out = F.avg_pool2d(out, 4)
-        out = out.view(out.size(0), -1)
-        out = self.linear(out)
-        return out
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor, shape (B, 3, 32, 32).
 
-
-def test():
-    net = MobileNetV2()
-    x = torch.randn(2,3,32,32)
-    y = net(x)
-    print(y.size())
-
-# test()
-
-
-
-"""
-Input:  (64, 3, 32, 32)
-
-Conv2d(3→32, k=3, s=1, pad=1) + BN + ReLU → (64, 32, 32, 32)
-                                              ↑ stride=1 for CIFAR
-
-── 7 stages of Inverted Residual Blocks ──
-
-Stage 1: t=1, 1 block,  32→16,  s=1  → (64, 16,  32, 32)
-Stage 2: t=6, 2 blocks, 16→24,  s=1  → (64, 24,  32, 32)  ← s=1 for CIFAR
-Stage 3: t=6, 3 blocks, 24→32,  s=2  → (64, 32,  16, 16)
-Stage 4: t=6, 4 blocks, 32→64,  s=2  → (64, 64,  8,  8)
-Stage 5: t=6, 3 blocks, 64→96,  s=1  → (64, 96,  8,  8)
-Stage 6: t=6, 3 blocks, 96→160, s=2  → (64, 160, 4,  4)
-Stage 7: t=6, 1 block,  160→320,s=1  → (64, 320, 4,  4)
-
-Each block internally:
-  (64, 32, H, W)
-  → expand:     Conv1×1(32→192) + BN + ReLU    (t=6, so 32×6=192)
-  → depthwise:  Conv3×3(192, groups=192) + BN + ReLU
-  → project:    Conv1×1(192→32) + BN            ← NO ReLU (linear bottleneck)
-  → + shortcut if stride==1
-
-Conv2d(320→1280, k=1) + BN + ReLU    → (64, 1280, 4, 4)
-AvgPool2d(4)                          → (64, 1280, 1, 1)  ← kernel=4 for CIFAR
-x.view(B, -1)                         → (64, 1280)
-Linear(1280→10)                        → (64, 10)
-
-Output: (64, 10) logits
-
-"""
+        Returns:
+            torch.Tensor: Class logits, shape (B, num_classes).
+        """
+        out = F.relu6(self.bn1(self.conv1(x)))    # (B,   32, 32, 32)
+        out = self.layers(out)                     # (B,  320,  4,  4)
+        out = F.relu6(self.bn2(self.conv2(out)))   # (B, 1280,  4,  4)
+        out = F.avg_pool2d(out, 4)                 # (B, 1280,  1,  1)  kernel=4 for CIFAR
+        out = out.view(out.size(0), -1)            # (B, 1280)
+        return self.linear(out)                    # (B, num_classes)
