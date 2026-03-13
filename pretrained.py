@@ -384,7 +384,7 @@ def run_transfer(
     Returns:
         TrainingHistory: Per-epoch metrics + best accuracy.
     """
-    train_loader, test_loader = get_cifar10_loaders(option, batch_size)
+    train_loader, val_loader, test_loader = get_cifar10_loaders(option, batch_size)
     criterion = nn.CrossEntropyLoss()
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
