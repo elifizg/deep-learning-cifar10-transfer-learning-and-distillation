@@ -460,8 +460,9 @@ def plot_training_curves(histories: List[TrainingHistory], save_prefix: str = "t
     try:
         import matplotlib.pyplot as plt
 
-        epochs = range(1, len(histories[0].test_loss) + 1)
-        colors = ["#4f86c6", "#e07b39", "#5aab61", "#c45c8a"]
+        n_epochs = len(histories[0].test_loss)
+        epochs   = list(range(1, n_epochs + 1))
+        colors   = ["#4f86c6", "#e07b39", "#5aab61", "#c45c8a"]
 
         fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
@@ -473,12 +474,14 @@ def plot_training_curves(histories: List[TrainingHistory], save_prefix: str = "t
         axes[0].set_title("Validation Loss per Epoch")
         axes[0].set_xlabel("Epoch")
         axes[0].set_ylabel("Loss")
+        axes[0].set_xticks(epochs)          # integer ticks: 1, 2, 3 ...
         axes[0].legend()
         axes[0].grid(linestyle="--", alpha=0.5)
 
         axes[1].set_title("Validation Accuracy per Epoch")
         axes[1].set_xlabel("Epoch")
         axes[1].set_ylabel("Accuracy")
+        axes[1].set_xticks(epochs)          # integer ticks: 1, 2, 3 ...
         axes[1].legend()
         axes[1].grid(linestyle="--", alpha=0.5)
 
@@ -516,8 +519,8 @@ def plot_accuracy_bar(histories: List[TrainingHistory], save_prefix: str = "tran
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                     f"{acc:.2f}%", ha="center", va="bottom", fontsize=11)
 
-        ax.set_ylabel("Best Test Accuracy (%)")
-        ax.set_title("Transfer Learning — Best Accuracy Comparison")
+        ax.set_ylabel("Final Test Accuracy (%)")
+        ax.set_title("Transfer Learning — Final Test Accuracy Comparison")
         ax.set_ylim(0, 100)
         ax.grid(axis="y", linestyle="--", alpha=0.5)
         plt.tight_layout()
@@ -576,7 +579,7 @@ def plot_tsne(
         return
 
     model.eval()
-    _, test_loader = get_cifar10_loaders(option, batch_size=256)
+    _, _, test_loader = get_cifar10_loaders(option, batch_size=256)
 
     # ── Register hook to capture features before the FC layer ────────────────
     features_list: List[torch.Tensor] = []
@@ -640,13 +643,14 @@ def print_results_table(histories: List[TrainingHistory]) -> None:
     Args:
         histories: List of TrainingHistory objects from run_transfer().
     """
-    print(f"\n{'=' * 55}")
-    print(f"  {'Experiment':<30} {'Best Acc':>9} {'Final Acc':>10}")
-    print(f"{'─' * 55}")
+    print(f"\n{'=' * 60}")
+    print(f"  {'Experiment':<30} {'Best Val Acc':>12} {'Test Acc':>9}")
+    print(f"{'─' * 60}")
     for h in histories:
-        final = h.test_acc[-1] if h.test_acc else 0.0
-        print(f"  {h.name:<30} {h.best_acc:>8.4f}  {final:>9.4f}")
-    print(f"{'=' * 55}")
+        best_val = max(h.test_acc) if h.test_acc else 0.0   # test_acc stores val metrics
+        print(f"  {h.name:<30} {best_val:>11.4f}  {h.best_acc:>8.4f}")
+    print(f"{'=' * 60}")
+    print(f"  Note: Best Val Acc = best checkpoint epoch | Test Acc = held-out final")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
