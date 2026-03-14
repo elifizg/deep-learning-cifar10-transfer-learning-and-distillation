@@ -288,6 +288,7 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     model_b1 = SimpleCNN(num_classes=10).to(device)
     h_b1     = run_training_tracked(model_b1, cfg_b1, device, label="SimpleCNN (baseline)")
     histories.append(h_b1)
+    model_b1.cpu(); torch.cuda.empty_cache()
 
     # Measure FLOPs for SimpleCNN
     try:
@@ -310,6 +311,7 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     model_b2a = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     h_b2a     = run_training_tracked(model_b2a, cfg_b2a, device, label="ResNet (no LS)")
     histories.append(h_b2a)
+    model_b2a.cpu(); torch.cuda.empty_cache()
 
     try:
         macs, _ = get_model_complexity_info(
@@ -330,6 +332,7 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     model_b2b = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     h_b2b     = run_training_tracked(model_b2b, cfg_b2b, device, label="ResNet (LS=0.1)")
     histories.append(h_b2b)
+    model_b2b.cpu(); torch.cuda.empty_cache()
 
     # ── B.3  SimpleCNN + KD  (ResNet teacher) ─────────────────────────────────
     print()
@@ -351,6 +354,7 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     h_b3     = run_training_tracked(model_b3, cfg_b3, device,
                                     label="SimpleCNN (KD)", teacher=teacher)
     histories.append(h_b3)
+    model_b3.cpu(); teacher.cpu(); torch.cuda.empty_cache()
     flops_dict["SimpleCNN (KD)"] = flops_dict.get("SimpleCNN (baseline)", "N/A")
 
     # ── B.4  MobileNet + Hybrid KD+LS ─────────────────────────────────────────
