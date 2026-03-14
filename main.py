@@ -547,17 +547,22 @@ def main() -> None:
     set_seed(config.seed)
     device = get_device(config)
 
-    print(f"\n{'=' * 55}")
-    print(f"  Dataset          : {config.dataset}")
-    print(f"  Model            : {config.model}")
-    print(f"  Mode             : {config.mode}")
-    print(f"  Device           : {device}")
-    if config.label_smoothing > 0:
-        print(f"  Label smoothing  : epsilon={config.label_smoothing}")
-    if config.distillation:
-        print(f"  Distillation     : T={config.temperature}  "
-              f"alpha={config.distill_alpha}  mode={config.distill_mode}")
-    print(f"{'=' * 55}\n")
+    # For kd/b* modes the run_b* functions print their own headers.
+    kd_modes = {"kd", "b1", "b2a", "b2b", "b3", "b4"}
+    if config.mode not in kd_modes:
+        print(f"\n{'=' * 55}")
+        print(f"  Dataset          : {config.dataset}")
+        print(f"  Model            : {config.model}")
+        print(f"  Mode             : {config.mode}")
+        print(f"  Device           : {device}")
+        if config.label_smoothing > 0:
+            print(f"  Label smoothing  : epsilon={config.label_smoothing}")
+        if config.distillation:
+            print(f"  Distillation     : T={config.temperature}  "
+                  f"alpha={config.distill_alpha}  mode={config.distill_mode}")
+        print(f"{'=' * 55}\n")
+    else:
+        print(f"\n  Mode : {config.mode}  |  Device : {device}\n")
 
     # ── Knowledge Distillation — individual experiments ──────────────────────
     kd_dispatch = {"b1": run_b1, "b2a": run_b2a, "b2b": run_b2b,
