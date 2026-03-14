@@ -11,7 +11,7 @@ Responsibilities:
 """
 
 import copy
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -620,9 +620,9 @@ class RunHistory:
         test_acc:   Final held-out test accuracy (single scalar, set after training).
     """
     label:      str
-    train_loss: list[float] = field(default_factory=list)
-    train_acc:  list[float] = field(default_factory=list)
-    val_acc:    list[float] = field(default_factory=list)
+    train_loss: List[float] = field(default_factory=list)
+    train_acc:  List[float] = field(default_factory=list)
+    val_acc:    List[float] = field(default_factory=list)
     test_acc:   float       = 0.0
 
 
@@ -701,7 +701,7 @@ def run_training_tracked(
 
 
 def plot_comparison_curves(
-    histories:   list["RunHistory"],
+    histories:   List["RunHistory"],
     title:       str       = "Training Comparison",
     save_path:   str       = "comparison_curves.png",
 ) -> None:
@@ -752,8 +752,8 @@ def plot_comparison_curves(
 
 
 def print_comparison_table(
-    histories:   list["RunHistory"],
-    flops_dict:  Optional[dict[str, str]] = None,
+    histories:   List["RunHistory"],
+    flops_dict:  Optional[Dict[str, str]] = None,
 ) -> None:
     """
     Print a formatted results table suitable for the assignment report.
