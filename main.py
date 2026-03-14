@@ -298,6 +298,7 @@ def run_b1(config: TrainingConfig, device: torch.device) -> None:
     """B.1 — SimpleCNN baseline (standard CE, no teacher)."""
     from models.CNN import SimpleCNN
     cfg = _make_cifar_config(epochs=config.epochs, save_path="best_cnn_baseline.pth")
+    print(f"  Dataset : cifar10 | Model : SimpleCNN | Device : {device}")
     model = SimpleCNN(num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="SimpleCNN (baseline)")
     _free_gpu(model)
@@ -307,6 +308,7 @@ def run_b2a(config: TrainingConfig, device: torch.device) -> None:
     """B.2a — ResNet-18 from scratch, no label smoothing."""
     cfg = _make_cifar_config(epochs=config.epochs, save_path="best_resnet.pth",
                              label_smoothing=0.0)
+    print(f"  Dataset : cifar10 | Model : ResNet-18 | Device : {device}")
     model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="ResNet (no LS)")
     _free_gpu(model)
@@ -316,6 +318,7 @@ def run_b2b(config: TrainingConfig, device: torch.device) -> None:
     """B.2b — ResNet-18 from scratch, label smoothing epsilon=0.1."""
     cfg = _make_cifar_config(epochs=config.epochs, save_path="best_resnet_ls.pth",
                              label_smoothing=0.1)
+    print(f"  Dataset : cifar10 | Model : ResNet-18 | Label Smoothing : 0.1 | Device : {device}")
     model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="ResNet (LS=0.1)")
     _free_gpu(model)
@@ -333,6 +336,7 @@ def run_b3(config: TrainingConfig, device: torch.device) -> None:
     cfg = _make_cifar_config(epochs=config.epochs, save_path="best_cnn_kd.pth",
                              distillation=True, distill_mode="standard",
                              temperature=4.0, distill_alpha=0.3)
+    print(f"  Dataset : cifar10 | Model : SimpleCNN | KD T=4.0 alpha=0.3 | Device : {device}")
     model = SimpleCNN(num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="SimpleCNN (KD)", teacher=teacher)
     _free_gpu(model, teacher)
@@ -350,6 +354,7 @@ def run_b4(config: TrainingConfig, device: torch.device) -> None:
     cfg = _make_cifar_config(epochs=config.epochs, save_path="best_mobilenet_kd.pth",
                              distillation=True, distill_mode="teacher_prob",
                              temperature=4.0, distill_alpha=0.3)
+    print(f"  Dataset : cifar10 | Model : MobileNetV2 | Hybrid KD+LS | Device : {device}")
     model = MobileNetV2(num_classes=10).to(device)
     run_training_tracked(model, cfg, device,
                          label="MobileNet (hybrid KD+LS)", teacher=teacher)
