@@ -44,8 +44,8 @@ from pretrained       import (
     run_transfer, TrainingHistory,
     plot_training_curves, plot_accuracy_bar, plot_tsne, print_results_table,
 )
-from train import run_training
-from test  import run_test
+from train import run_training, run_training_tracked, plot_comparison_curves, print_comparison_table, RunHistory
+from test  import run_test, count_flops
 
 ssl._create_default_https_context = ssl._create_unverified_context
 
@@ -234,6 +234,172 @@ def run_transfer_mode(config: TrainingConfig, device: torch.device) -> None:
 
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Part B: Knowledge Distillation Experiment Runner
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
+    """
+    Run all Part B Knowledge Distillation experiments in sequence and
+    produce comparison tables and plots.
+
+    Experiment order (matches assignment requirements):
+      B.1  SimpleCNN baseline             — standard CE, no teacher
+      B.2a ResNet baseline                — standard CE, from scratch
+      B.2b ResNet + Label Smoothing       — LS epsilon=0.1, from scratch
+      B.3  SimpleCNN + KD                 — ResNet teacher, standard KD
+      B.4  MobileNet + Hybrid KD+LS       — ResNet teacher, teacher_prob mode
+
+    After all runs the function prints a combined results table with FLOPs
+    and saves training curve PNG files for the report.
+
+    Note: B.2a ResNet must finish before B.3 / B.4 because its saved weights
+    are loaded as the teacher model.
+
+    Args:
+        config: Base TrainingConfig.  save_path and model fields are
+                overridden per experiment inside this function.
+        device: Compute device.
+    """
+    import copy as _copy
+    from models.CNN      import SimpleCNN
+    from models.ResNet   import ResNet, BasicBlock
+    from models.mobilenet import MobileNetV2
+
+    histories: list = []
+    flops_dict: dict = {}
+
+    def _cfg(**overrides) -> TrainingConfig:
+        """Return a shallow copy of config with the given fields overridden."""
+        import dataclasses
+        d = dataclasses.asdict(config)
+        d.update(overrides)
+        return TrainingConfig(**d)
+
+    # ── B.1  SimpleCNN baseline ───────────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  B.1  SimpleCNN  —  standard CE")
+    print("=" * 60)
+    cfg_b1   = _cfg(model="cnn", dataset="cifar10",
+                    save_path="best_cnn_baseline.pth",
+                    distillation=False, label_smoothing=0.0)
+    model_b1 = SimpleCNN(num_classes=10).to(device)
+    h_b1     = run_training_tracked(model_b1, cfg_b1, device, label="SimpleCNN (baseline)")
+    histories.append(h_b1)
+
+    # Measure FLOPs for SimpleCNN
+    try:
+        from ptflops import get_model_complexity_info
+        macs, _ = get_model_complexity_info(
+            model_b1, (3, 32, 32), as_strings=True,
+            print_per_layer_stat=False, verbose=False)
+        flops_dict["SimpleCNN (baseline)"] = macs
+    except Exception:
+        flops_dict["SimpleCNN (baseline)"] = "N/A"
+
+    # ── B.2a  ResNet baseline ─────────────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  B.2a  ResNet-18  —  no label smoothing")
+    print("=" * 60)
+    cfg_b2a   = _cfg(model="resnet", dataset="cifar10",
+                     save_path="best_resnet.pth",
+                     distillation=False, label_smoothing=0.0)
+    model_b2a = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
+    h_b2a     = run_training_tracked(model_b2a, cfg_b2a, device, label="ResNet (no LS)")
+    histories.append(h_b2a)
+
+    try:
+        macs, _ = get_model_complexity_info(
+            model_b2a, (3, 32, 32), as_strings=True,
+            print_per_layer_stat=False, verbose=False)
+        flops_dict["ResNet (no LS)"] = macs
+    except Exception:
+        flops_dict["ResNet (no LS)"] = "N/A"
+
+    # ── B.2b  ResNet + Label Smoothing ────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  B.2b  ResNet-18  —  label smoothing epsilon=0.1")
+    print("=" * 60)
+    cfg_b2b   = _cfg(model="resnet", dataset="cifar10",
+                     save_path="best_resnet_ls.pth",
+                     distillation=False, label_smoothing=0.1)
+    model_b2b = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
+    h_b2b     = run_training_tracked(model_b2b, cfg_b2b, device, label="ResNet (LS=0.1)")
+    histories.append(h_b2b)
+
+    # ── B.3  SimpleCNN + KD  (ResNet teacher) ─────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  B.3  SimpleCNN  —  KD with ResNet teacher")
+    print("=" * 60)
+    # Load the best ResNet (B.2a) as teacher — frozen, eval mode
+    teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
+    teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
+    teacher.to(device).eval()
+    for p in teacher.parameters():
+        p.requires_grad = False
+
+    cfg_b3   = _cfg(model="cnn", dataset="cifar10",
+                    save_path="best_cnn_kd.pth",
+                    distillation=True, distill_mode="standard",
+                    temperature=4.0, distill_alpha=0.3, label_smoothing=0.0)
+    model_b3 = SimpleCNN(num_classes=10).to(device)
+    h_b3     = run_training_tracked(model_b3, cfg_b3, device,
+                                    label="SimpleCNN (KD)", teacher=teacher)
+    histories.append(h_b3)
+    flops_dict["SimpleCNN (KD)"] = flops_dict.get("SimpleCNN (baseline)", "N/A")
+
+    # ── B.4  MobileNet + Hybrid KD+LS ─────────────────────────────────────────
+    print()
+    print("=" * 60)
+    print("  B.4  MobileNet  —  Hybrid KD + LS (teacher_prob)")
+    print("=" * 60)
+    cfg_b4   = _cfg(model="mobilenet", dataset="cifar10",
+                    save_path="best_mobilenet_kd.pth",
+                    distillation=True, distill_mode="teacher_prob",
+                    temperature=4.0, distill_alpha=0.3, label_smoothing=0.0)
+    model_b4 = MobileNetV2(num_classes=10).to(device)
+    h_b4     = run_training_tracked(model_b4, cfg_b4, device,
+                                    label="MobileNet (hybrid KD+LS)", teacher=teacher)
+    histories.append(h_b4)
+
+    try:
+        macs, _ = get_model_complexity_info(
+            model_b4, (3, 32, 32), as_strings=True,
+            print_per_layer_stat=False, verbose=False)
+        flops_dict["MobileNet (hybrid KD+LS)"] = macs
+    except Exception:
+        flops_dict["MobileNet (hybrid KD+LS)"] = "N/A"
+
+    # ── Final Reports ──────────────────────────────────────────────────────────
+    print_comparison_table(histories, flops_dict=flops_dict)
+
+    # Curve 1: Label smoothing effect on ResNet (B.2a vs B.2b)
+    plot_comparison_curves(
+        [h_b2a, h_b2b],
+        title="ResNet — With vs Without Label Smoothing",
+        save_path="b2_label_smoothing_curves.png",
+    )
+
+    # Curve 2: KD effect on SimpleCNN (B.1 vs B.3)
+    plot_comparison_curves(
+        [h_b1, h_b3],
+        title="SimpleCNN — Baseline vs Knowledge Distillation",
+        save_path="b3_kd_curves.png",
+    )
+
+    # Curve 3: Full comparison (all 5 runs)
+    plot_comparison_curves(
+        histories,
+        title="Part B — All Experiments",
+        save_path="b_all_curves.png",
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Entry Point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -262,6 +428,11 @@ def main() -> None:
         print(f"  Distillation     : T={config.temperature}  "
               f"alpha={config.distill_alpha}  mode={config.distill_mode}")
     print(f"{'=' * 55}\n")
+
+    # ── Knowledge Distillation full pipeline ─────────────────────────────────
+    if config.mode == "kd":
+        run_kd_experiments(config, device)
+        return
 
     # ── Transfer learning ────────────────────────────────────────────────────
     if config.mode == "transfer":

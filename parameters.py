@@ -70,7 +70,7 @@ class TrainingConfig:
     device:       str = "cpu"
     save_path:    str = "best_model.pth"
     log_interval: int = 100
-    mode:         str = "both"    # "train", "test", "both", or "transfer"
+    mode:         str = "both"    # "train", "test", "both", "transfer", or "kd"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def get_params() -> TrainingConfig:
     )
 
     # ── Core arguments ────────────────────────────────────────────────────────
-    parser.add_argument("--mode",       choices=["train", "test", "both", "transfer"], default="both")
+    parser.add_argument("--mode",       choices=["train", "test", "both", "transfer", "kd"], default="both")
     parser.add_argument("--dataset",    choices=["mnist", "cifar10"],      default="mnist")
     parser.add_argument("--model",
         choices=["mlp", "cnn", "vgg", "resnet", "mobilenet", "resnet18", "vgg16"], default="mlp")
@@ -136,6 +136,8 @@ def get_params() -> TrainingConfig:
     parser.add_argument("--distill_mode", choices=["standard", "teacher_prob"],
         default="standard",
         help="standard: classic KD  |  teacher_prob: use teacher confidence on true class only")
+    parser.add_argument("--save_path", type=str, default="best_model.pth",
+        help="Path to save the best model weights (e.g. best_resnet.pth)")
 
     args = parser.parse_args()
 
@@ -173,4 +175,5 @@ def get_params() -> TrainingConfig:
         device          = args.device,
         mode            = args.mode,
         tsne            = args.tsne,
+        save_path       = args.save_path,
     )

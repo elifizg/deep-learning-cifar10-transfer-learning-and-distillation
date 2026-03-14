@@ -597,3 +597,192 @@ def run_training(
     print(f"\nTraining complete.")
     print(f"  Best val  accuracy : {best_acc:.4f}")
     print(f"  Final test accuracy: {test_acc:.4f}  (held-out, reported once)")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Visualisation helpers  (Part B comparisons)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from dataclasses import dataclass, field as _field
+from typing import Dict as _Dict
+
+
+@dataclass
+class RunHistory:
+    """
+    Stores per-epoch training metrics for a single experiment run.
+
+    Used by plot_comparison_curves() and print_comparison_table() to draw
+    side-by-side comparisons between experiments (e.g. ResNet with and
+    without label smoothing, or SimpleCNN vs SimpleCNN+KD).
+
+    Fields:
+        label:      Short human-readable name shown in legends and tables.
+        train_loss: Training loss recorded at the end of each epoch.
+        train_acc:  Training accuracy recorded at the end of each epoch.
+        val_acc:    Validation accuracy recorded at the end of each epoch.
+        test_acc:   Final held-out test accuracy (single scalar, set after training).
+    """
+    label:      str
+    train_loss: List[float] = _field(default_factory=list)
+    train_acc:  List[float] = _field(default_factory=list)
+    val_acc:    List[float] = _field(default_factory=list)
+    test_acc:   float       = 0.0
+
+
+def run_training_tracked(
+    model:   nn.Module,
+    config:  TrainingConfig,
+    device:  torch.device,
+    label:   str,
+    teacher: Optional[nn.Module] = None,
+) -> "RunHistory":
+    """
+    Like run_training() but returns a RunHistory for post-hoc plotting.
+
+    This wrapper replaces run_training() when you need to compare multiple
+    experiments on the same axes.  The training logic is identical; we only
+    add metric collection.
+
+    Args:
+        model:   Student model to train.
+        config:  TrainingConfig instance.
+        device:  Compute device.
+        label:   Short name for this run (e.g. "ResNet + LS").
+        teacher: Optional teacher model for KD.
+
+    Returns:
+        RunHistory: Per-epoch metrics + final test accuracy.
+    """
+    train_loader, val_loader, test_loader = get_loaders(config)
+    criterion = build_criterion(config)
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=config.learning_rate,
+        weight_decay=config.weight_decay,
+    )
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+
+    history      = RunHistory(label=label)
+    best_acc:    float          = 0.0
+    best_weights: Optional[dict] = None
+
+    for epoch in range(1, config.epochs + 1):
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(f"\nEpoch {epoch}/{config.epochs}  (lr={current_lr:.2e})")
+
+        tr_loss, tr_acc   = train_one_epoch(
+            model, train_loader, optimizer, criterion,
+            device, config.log_interval, teacher,
+        )
+        val_loss, val_acc = validate(model, val_loader, device)
+        scheduler.step()
+
+        history.train_loss.append(tr_loss)
+        history.train_acc.append(tr_acc)
+        history.val_acc.append(val_acc)
+
+        print(f"  train  loss={tr_loss:.4f}  acc={tr_acc:.4f}")
+        print(f"  val    loss={val_loss:.4f}  acc={val_acc:.4f}")
+
+        if val_acc > best_acc:
+            best_acc     = val_acc
+            best_weights = copy.deepcopy(model.state_dict())
+            torch.save(best_weights, config.save_path)
+            print(f"  [saved]  val_acc={best_acc:.4f}  ->  {config.save_path}")
+
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
+
+    _, test_acc = validate(model, test_loader, device)
+    history.test_acc = test_acc
+
+    print(f"\nTraining complete  [{label}]")
+    print(f"  Best val  accuracy : {best_acc:.4f}")
+    print(f"  Final test accuracy: {test_acc:.4f}  (held-out, reported once)")
+    return history
+
+
+def plot_comparison_curves(
+    histories:   List["RunHistory"],
+    title:       str       = "Training Comparison",
+    save_path:   str       = "comparison_curves.png",
+) -> None:
+    """
+    Plot validation accuracy curves for multiple runs on the same axes.
+
+    Each RunHistory is drawn as a separate line so you can visually compare
+    convergence speed and final performance between experiments.
+
+    Args:
+        histories:  List of RunHistory objects (one per experiment).
+        title:      Chart title shown at the top.
+        save_path:  File name for the saved PNG.
+    """
+    try:
+        import matplotlib.pyplot as plt
+
+        epochs = list(range(1, len(histories[0].val_acc) + 1))
+        colors = ["#4f86c6", "#e07b39", "#5aab61", "#c45c8a", "#8855bb"]
+
+        fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+
+        for i, h in enumerate(histories):
+            c = colors[i % len(colors)]
+            axes[0].plot(epochs, h.train_loss, marker="o", color=c, label=h.label)
+            axes[1].plot(epochs, h.val_acc,    marker="o", color=c, label=h.label)
+
+        for ax, ylabel, ytitle in zip(
+            axes,
+            ["Loss", "Accuracy"],
+            ["Training Loss per Epoch", "Validation Accuracy per Epoch"],
+        ):
+            ax.set_title(ytitle)
+            ax.set_xlabel("Epoch")
+            ax.set_ylabel(ylabel)
+            ax.set_xticks(epochs)
+            ax.legend()
+            ax.grid(linestyle="--", alpha=0.5)
+
+        plt.suptitle(title, fontsize=13)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150)
+        plt.close()
+        print(f"Comparison curves saved to: {save_path}")
+
+    except ImportError:
+        print("matplotlib not found — skipping curve plot.")
+
+
+def print_comparison_table(
+    histories:   List["RunHistory"],
+    flops_dict:  Optional[_Dict[str, str]] = None,
+) -> None:
+    """
+    Print a formatted results table suitable for the assignment report.
+
+    Optionally includes a FLOPs column when flops_dict is provided.
+
+    Args:
+        histories:  List of RunHistory objects from run_training_tracked().
+        flops_dict: Optional {label: flops_string} mapping (e.g. {"SimpleCNN": "55.17 MMac"}).
+    """
+    has_flops = flops_dict is not None
+    width     = 72 if has_flops else 55
+
+    print(f"\n{'=' * width}")
+    header = f"  {'Experiment':<28} {'Test Acc':>9}"
+    if has_flops:
+        header += f"  {'FLOPs':>12}"
+    print(header)
+    print(f"{'─' * width}")
+
+    for h in histories:
+        row = f"  {h.label:<28} {h.test_acc:>8.4f}"
+        if has_flops:
+            flops = flops_dict.get(h.label, "N/A")
+            row  += f"  {flops:>12}"
+        print(row)
+
+    print(f"{'=' * width}")
