@@ -603,10 +603,6 @@ def run_training(
 # Visualisation helpers  (Part B comparisons)
 # ─────────────────────────────────────────────────────────────────────────────
 
-from dataclasses import dataclass, field as _field
-from typing import Dict as _Dict
-
-
 @dataclass
 class RunHistory:
     """
@@ -624,9 +620,9 @@ class RunHistory:
         test_acc:   Final held-out test accuracy (single scalar, set after training).
     """
     label:      str
-    train_loss: List[float] = _field(default_factory=list)
-    train_acc:  List[float] = _field(default_factory=list)
-    val_acc:    List[float] = _field(default_factory=list)
+    train_loss: list[float] = field(default_factory=list)
+    train_acc:  list[float] = field(default_factory=list)
+    val_acc:    list[float] = field(default_factory=list)
     test_acc:   float       = 0.0
 
 
@@ -705,7 +701,7 @@ def run_training_tracked(
 
 
 def plot_comparison_curves(
-    histories:   List["RunHistory"],
+    histories:   list["RunHistory"],
     title:       str       = "Training Comparison",
     save_path:   str       = "comparison_curves.png",
 ) -> None:
@@ -756,8 +752,8 @@ def plot_comparison_curves(
 
 
 def print_comparison_table(
-    histories:   List["RunHistory"],
-    flops_dict:  Optional[_Dict[str, str]] = None,
+    histories:   list["RunHistory"],
+    flops_dict:  Optional[dict[str, str]] = None,
 ) -> None:
     """
     Print a formatted results table suitable for the assignment report.
