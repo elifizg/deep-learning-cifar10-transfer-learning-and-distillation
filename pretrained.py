@@ -407,28 +407,34 @@ def run_transfer(
         lr_now = optimizer.param_groups[0]["lr"]
         print(f"\nEpoch {epoch}/{epochs}  (lr={lr_now:.2e})")
 
-        tr_loss, tr_acc     = train_one_epoch(
+        tr_loss, tr_acc   = train_one_epoch(
             model, train_loader, optimizer, criterion, device)
-        test_loss, test_acc = evaluate(model, test_loader, criterion, device)
+        val_loss, val_acc = evaluate(model, val_loader, criterion, device)
         scheduler.step()
 
-        # Record metrics for plotting.
+        # Record per-epoch metrics for plotting.
         history.train_loss.append(tr_loss)
         history.train_acc.append(tr_acc)
-        history.test_loss.append(test_loss)
-        history.test_acc.append(test_acc)
+        history.test_loss.append(val_loss)
+        history.test_acc.append(val_acc)
 
         print(f"  train  loss={tr_loss:.4f}  acc={tr_acc:.4f}")
-        print(f"  test   loss={test_loss:.4f}  acc={test_acc:.4f}")
+        print(f"  val    loss={val_loss:.4f}  acc={val_acc:.4f}  <- checkpoint decision")
 
-        if test_acc > history.best_acc:
-            history.best_acc = test_acc
+        # Checkpoint uses VAL — test set is never touched here.
+        if val_acc > history.best_acc:
+            history.best_acc = val_acc
             best_weights     = copy.deepcopy(model.state_dict())
             torch.save(best_weights, save_path)
-            print(f"  [saved]  test_acc={history.best_acc:.4f}  ->  {save_path}")
+            print(f"  [saved]  val_acc={history.best_acc:.4f}  ->  {save_path}")
 
+    # Restore best checkpoint then evaluate once on held-out test set.
     model.load_state_dict(best_weights)
-    print(f"\nBest test accuracy for {model_name}: {history.best_acc:.4f}")
+    final_test_loss, final_test_acc = evaluate(model, test_loader, criterion, device)
+    history.best_acc = final_test_acc
+
+    print(f"\nBest val  accuracy : {max(history.test_acc):.4f}")
+    print(f"Final test accuracy: {final_test_acc:.4f}  (held-out, reported once)")
     return history
 
 
@@ -464,13 +470,13 @@ def plot_training_curves(histories: List[TrainingHistory], save_prefix: str = "t
             axes[0].plot(epochs, h.test_loss, marker="o", color=c, label=h.name)
             axes[1].plot(epochs, h.test_acc,  marker="o", color=c, label=h.name)
 
-        axes[0].set_title("Test Loss per Epoch")
+        axes[0].set_title("Validation Loss per Epoch")
         axes[0].set_xlabel("Epoch")
         axes[0].set_ylabel("Loss")
         axes[0].legend()
         axes[0].grid(linestyle="--", alpha=0.5)
 
-        axes[1].set_title("Test Accuracy per Epoch")
+        axes[1].set_title("Validation Accuracy per Epoch")
         axes[1].set_xlabel("Epoch")
         axes[1].set_ylabel("Accuracy")
         axes[1].legend()
