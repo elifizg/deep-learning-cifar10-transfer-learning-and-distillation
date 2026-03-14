@@ -392,9 +392,17 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     # ── Collect histories from saved .pth files for plotting ─────────────────
     # Since each run_b* is independent, we re-run training in tracked mode
     # or load saved results. Here we rebuild histories from a quick eval.
-    print("\n  All experiments complete.")
-    print("  To generate comparison plots, run:")
-    print("  !python plot_results.py")
+    print("\n  All experiments complete. Generating plots...")
+
+    # Auto-generate all comparison plots
+    import importlib.util, sys, os
+    spec = importlib.util.spec_from_file_location(
+        "plot_results",
+        os.path.join(os.path.dirname(__file__), "plot_results.py")
+    )
+    plot_mod = importlib.util.load_from_spec(spec)
+    spec.loader.exec_module(plot_mod)
+    plot_mod.main()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

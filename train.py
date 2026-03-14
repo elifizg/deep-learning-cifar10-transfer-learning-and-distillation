@@ -698,6 +698,20 @@ def run_training_tracked(
     print(f"\nTraining complete  [{label}]")
     print(f"  Best val  accuracy : {best_acc:.4f}")
     print(f"  Final test accuracy: {test_acc:.4f}  (held-out, reported once)")
+
+    # Save history to JSON so plots can be generated after independent runs.
+    import json, re
+    fname = "history_" + re.sub(r"[^a-zA-Z0-9]", "_", label) + ".json"
+    with open(fname, "w") as f:
+        json.dump({
+            "label":      history.label,
+            "train_loss": history.train_loss,
+            "train_acc":  history.train_acc,
+            "val_acc":    history.val_acc,
+            "test_acc":   history.test_acc,
+        }, f, indent=2)
+    print(f"  History saved to: {fname}")
+
     return history
 
 

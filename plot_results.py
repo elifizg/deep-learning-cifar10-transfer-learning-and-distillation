@@ -183,7 +183,7 @@ def main() -> None:
         "ResNet (no LS)":           "history_ResNet__no_LS_.json",
         "ResNet (LS=0.1)":          "history_ResNet__LS_0_1_.json",
         "SimpleCNN (KD)":           "history_SimpleCNN__KD_.json",
-        "MobileNet (hybrid)":       "history_MobileNet__hybrid_KD_LS_.json",
+        "MobileNet (hybrid KD+LS)": "history_MobileNet__hybrid_KD_LS_.json",
     }
 
     histories: Dict[str, dict] = {}
