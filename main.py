@@ -248,14 +248,56 @@ def _free_gpu(*models) -> None:
     torch.cuda.empty_cache()
 
 
+def _make_cifar_config(epochs: int, save_path: str,
+                       label_smoothing: float = 0.0,
+                       distillation: bool = False,
+                       distill_mode: str = "standard",
+                       temperature: float = 4.0,
+                       distill_alpha: float = 0.3) -> TrainingConfig:
+    """
+    Build a CIFAR-10 TrainingConfig from scratch with explicit values.
+
+    Avoids dataclasses.asdict() which converts tuples to lists and
+    corrupts mean/std fields causing the config to silently fall back
+    to MNIST defaults.
+    """
+    return TrainingConfig(
+        dataset         = "cifar10",
+        data_dir        = "./data",
+        num_workers     = 0,
+        mean            = (0.4914, 0.4822, 0.4465),
+        std             = (0.2023, 0.1994, 0.2010),
+        model           = "cnn",        # overridden per experiment
+        input_size      = 3072,
+        num_classes     = 10,
+        dropout         = 0.3,
+        vgg_depth       = "16",
+        resnet_layers   = [2, 2, 2, 2],
+        transfer_option = 1,
+        freeze_backbone = True,
+        label_smoothing = label_smoothing,
+        distillation    = distillation,
+        teacher_path    = "best_resnet.pth",
+        temperature     = temperature,
+        distill_alpha   = distill_alpha,
+        distill_mode    = distill_mode,
+        epochs          = epochs,
+        batch_size      = 64,
+        learning_rate   = 1e-3,
+        weight_decay    = 1e-4,
+        seed            = 42,
+        device          = "cuda",
+        save_path       = save_path,
+        log_interval    = 100,
+        mode            = "train",
+        tsne            = False,
+    )
+
+
 def run_b1(config: TrainingConfig, device: torch.device) -> None:
     """B.1 — SimpleCNN baseline (standard CE, no teacher)."""
     from models.CNN import SimpleCNN
-    import dataclasses
-    cfg = TrainingConfig(**{**dataclasses.asdict(config),
-                            "model": "cnn", "dataset": "cifar10",
-                            "save_path": "best_cnn_baseline.pth",
-                            "distillation": False, "label_smoothing": 0.0})
+    cfg = _make_cifar_config(epochs=config.epochs, save_path="best_cnn_baseline.pth")
     model = SimpleCNN(num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="SimpleCNN (baseline)")
     _free_gpu(model)
@@ -263,11 +305,8 @@ def run_b1(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b2a(config: TrainingConfig, device: torch.device) -> None:
     """B.2a — ResNet-18 from scratch, no label smoothing."""
-    import dataclasses
-    cfg = TrainingConfig(**{**dataclasses.asdict(config),
-                            "model": "resnet", "dataset": "cifar10",
-                            "save_path": "best_resnet.pth",
-                            "distillation": False, "label_smoothing": 0.0})
+    cfg = _make_cifar_config(epochs=config.epochs, save_path="best_resnet.pth",
+                             label_smoothing=0.0)
     model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="ResNet (no LS)")
     _free_gpu(model)
@@ -275,11 +314,8 @@ def run_b2a(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b2b(config: TrainingConfig, device: torch.device) -> None:
     """B.2b — ResNet-18 from scratch, label smoothing epsilon=0.1."""
-    import dataclasses
-    cfg = TrainingConfig(**{**dataclasses.asdict(config),
-                            "model": "resnet", "dataset": "cifar10",
-                            "save_path": "best_resnet_ls.pth",
-                            "distillation": False, "label_smoothing": 0.1})
+    cfg = _make_cifar_config(epochs=config.epochs, save_path="best_resnet_ls.pth",
+                             label_smoothing=0.1)
     model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="ResNet (LS=0.1)")
     _free_gpu(model)
@@ -287,21 +323,16 @@ def run_b2b(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b3(config: TrainingConfig, device: torch.device) -> None:
     """B.3 — SimpleCNN student + ResNet teacher (standard KD)."""
-    import dataclasses
     from models.CNN import SimpleCNN
-    # Load teacher
     teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
     teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
     teacher.to(device).eval()
     for p in teacher.parameters():
         p.requires_grad = False
 
-    cfg = TrainingConfig(**{**dataclasses.asdict(config),
-                            "model": "cnn", "dataset": "cifar10",
-                            "save_path": "best_cnn_kd.pth",
-                            "distillation": True, "distill_mode": "standard",
-                            "temperature": 4.0, "distill_alpha": 0.3,
-                            "label_smoothing": 0.0})
+    cfg = _make_cifar_config(epochs=config.epochs, save_path="best_cnn_kd.pth",
+                             distillation=True, distill_mode="standard",
+                             temperature=4.0, distill_alpha=0.3)
     model = SimpleCNN(num_classes=10).to(device)
     run_training_tracked(model, cfg, device, label="SimpleCNN (KD)", teacher=teacher)
     _free_gpu(model, teacher)
@@ -309,21 +340,16 @@ def run_b3(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b4(config: TrainingConfig, device: torch.device) -> None:
     """B.4 — MobileNet student + ResNet teacher (hybrid teacher_prob KD)."""
-    import dataclasses
     from models.mobilenet import MobileNetV2
-    # Load teacher
     teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
     teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
     teacher.to(device).eval()
     for p in teacher.parameters():
         p.requires_grad = False
 
-    cfg = TrainingConfig(**{**dataclasses.asdict(config),
-                            "model": "mobilenet", "dataset": "cifar10",
-                            "save_path": "best_mobilenet_kd.pth",
-                            "distillation": True, "distill_mode": "teacher_prob",
-                            "temperature": 4.0, "distill_alpha": 0.3,
-                            "label_smoothing": 0.0})
+    cfg = _make_cifar_config(epochs=config.epochs, save_path="best_mobilenet_kd.pth",
+                             distillation=True, distill_mode="teacher_prob",
+                             temperature=4.0, distill_alpha=0.3)
     model = MobileNetV2(num_classes=10).to(device)
     run_training_tracked(model, cfg, device,
                          label="MobileNet (hybrid KD+LS)", teacher=teacher)
