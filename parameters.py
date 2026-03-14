@@ -70,7 +70,7 @@ class TrainingConfig:
     device:       str = "cpu"
     save_path:    str = "best_model.pth"
     log_interval: int = 100
-    mode:         str = "both"    # "train", "test", "both", "transfer", or "kd"
+    mode:         str = "both"    # "train","test","both","transfer","kd","b1","b2a","b2b","b3","b4"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +95,7 @@ def get_params() -> TrainingConfig:
     )
 
     # ── Core arguments ────────────────────────────────────────────────────────
-    parser.add_argument("--mode",       choices=["train", "test", "both", "transfer", "kd"], default="both")
+    parser.add_argument("--mode",       choices=["train", "test", "both", "transfer", "kd", "b1", "b2a", "b2b", "b3", "b4"], default="both")
     parser.add_argument("--dataset",    choices=["mnist", "cifar10"],      default="mnist")
     parser.add_argument("--model",
         choices=["mlp", "cnn", "vgg", "resnet", "mobilenet", "resnet18", "vgg16"], default="mlp")

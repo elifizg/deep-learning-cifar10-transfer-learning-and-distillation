@@ -235,6 +235,101 @@ def run_transfer_mode(config: TrainingConfig, device: torch.device) -> None:
 
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Part B: Individual experiment runners
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _free_gpu(*models) -> None:
+    """Move models to CPU and release GPU memory cache."""
+    for m in models:
+        if m is not None:
+            m.cpu()
+    torch.cuda.empty_cache()
+
+
+def run_b1(config: TrainingConfig, device: torch.device) -> None:
+    """B.1 — SimpleCNN baseline (standard CE, no teacher)."""
+    from models.CNN import SimpleCNN
+    import dataclasses
+    cfg = TrainingConfig(**{**dataclasses.asdict(config),
+                            "model": "cnn", "dataset": "cifar10",
+                            "save_path": "best_cnn_baseline.pth",
+                            "distillation": False, "label_smoothing": 0.0})
+    model = SimpleCNN(num_classes=10).to(device)
+    run_training_tracked(model, cfg, device, label="SimpleCNN (baseline)")
+    _free_gpu(model)
+
+
+def run_b2a(config: TrainingConfig, device: torch.device) -> None:
+    """B.2a — ResNet-18 from scratch, no label smoothing."""
+    import dataclasses
+    cfg = TrainingConfig(**{**dataclasses.asdict(config),
+                            "model": "resnet", "dataset": "cifar10",
+                            "save_path": "best_resnet.pth",
+                            "distillation": False, "label_smoothing": 0.0})
+    model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
+    run_training_tracked(model, cfg, device, label="ResNet (no LS)")
+    _free_gpu(model)
+
+
+def run_b2b(config: TrainingConfig, device: torch.device) -> None:
+    """B.2b — ResNet-18 from scratch, label smoothing epsilon=0.1."""
+    import dataclasses
+    cfg = TrainingConfig(**{**dataclasses.asdict(config),
+                            "model": "resnet", "dataset": "cifar10",
+                            "save_path": "best_resnet_ls.pth",
+                            "distillation": False, "label_smoothing": 0.1})
+    model = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10).to(device)
+    run_training_tracked(model, cfg, device, label="ResNet (LS=0.1)")
+    _free_gpu(model)
+
+
+def run_b3(config: TrainingConfig, device: torch.device) -> None:
+    """B.3 — SimpleCNN student + ResNet teacher (standard KD)."""
+    import dataclasses
+    from models.CNN import SimpleCNN
+    # Load teacher
+    teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
+    teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
+    teacher.to(device).eval()
+    for p in teacher.parameters():
+        p.requires_grad = False
+
+    cfg = TrainingConfig(**{**dataclasses.asdict(config),
+                            "model": "cnn", "dataset": "cifar10",
+                            "save_path": "best_cnn_kd.pth",
+                            "distillation": True, "distill_mode": "standard",
+                            "temperature": 4.0, "distill_alpha": 0.3,
+                            "label_smoothing": 0.0})
+    model = SimpleCNN(num_classes=10).to(device)
+    run_training_tracked(model, cfg, device, label="SimpleCNN (KD)", teacher=teacher)
+    _free_gpu(model, teacher)
+
+
+def run_b4(config: TrainingConfig, device: torch.device) -> None:
+    """B.4 — MobileNet student + ResNet teacher (hybrid teacher_prob KD)."""
+    import dataclasses
+    from models.mobilenet import MobileNetV2
+    # Load teacher
+    teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
+    teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
+    teacher.to(device).eval()
+    for p in teacher.parameters():
+        p.requires_grad = False
+
+    cfg = TrainingConfig(**{**dataclasses.asdict(config),
+                            "model": "mobilenet", "dataset": "cifar10",
+                            "save_path": "best_mobilenet_kd.pth",
+                            "distillation": True, "distill_mode": "teacher_prob",
+                            "temperature": 4.0, "distill_alpha": 0.3,
+                            "label_smoothing": 0.0})
+    model = MobileNetV2(num_classes=10).to(device)
+    run_training_tracked(model, cfg, device,
+                         label="MobileNet (hybrid KD+LS)", teacher=teacher)
+    _free_gpu(model, teacher)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Part B: Knowledge Distillation Experiment Runner
 # ─────────────────────────────────────────────────────────────────────────────
@@ -432,6 +527,13 @@ def main() -> None:
         print(f"  Distillation     : T={config.temperature}  "
               f"alpha={config.distill_alpha}  mode={config.distill_mode}")
     print(f"{'=' * 55}\n")
+
+    # ── Knowledge Distillation — individual experiments ──────────────────────
+    kd_dispatch = {"b1": run_b1, "b2a": run_b2a, "b2b": run_b2b,
+                   "b3": run_b3, "b4": run_b4}
+    if config.mode in kd_dispatch:
+        kd_dispatch[config.mode](config, device)
+        return
 
     # ── Knowledge Distillation full pipeline ─────────────────────────────────
     if config.mode == "kd":
