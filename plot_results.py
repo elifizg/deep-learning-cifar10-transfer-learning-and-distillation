@@ -132,12 +132,13 @@ def plot_curves(histories: List[dict], title: str, save: str) -> None:
         ax.set_ylabel(ylabel)
         if epochs:
             ax.set_xticks(epochs)
-        ax.legend()
+        ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1),
+                  borderaxespad=0, frameon=True)
         ax.grid(linestyle="--", alpha=0.5)
 
     plt.suptitle(title, fontsize=13)
     plt.tight_layout()
-    plt.savefig(save, dpi=150)
+    plt.savefig(save, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved: {save}")
 
