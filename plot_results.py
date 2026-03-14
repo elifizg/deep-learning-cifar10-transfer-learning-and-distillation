@@ -111,14 +111,15 @@ def plot_bar(labels: List[str], accs: List[float], save: str) -> None:
 
 
 def plot_curves(histories: List[dict], title: str, save: str) -> None:
-    """Validation accuracy curves for multiple experiments."""
+    """Training loss and validation accuracy curves stacked vertically."""
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4))
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10))
+
+    epochs = list(range(1, len(histories[0]["val_acc"]) + 1))
 
     for i, h in enumerate(histories):
-        c      = COLORS[i % len(COLORS)]
-        epochs = list(range(1, len(h["val_acc"]) + 1))
+        c = COLORS[i % len(COLORS)]
         axes[0].plot(epochs, h["train_loss"], marker="o", color=c, label=h["label"])
         axes[1].plot(epochs, h["val_acc"],    marker="o", color=c, label=h["label"])
 
@@ -133,12 +134,22 @@ def plot_curves(histories: List[dict], title: str, save: str) -> None:
         if epochs:
             ax.set_xticks(epochs)
             ax.tick_params(axis="x", labelsize=9 if len(epochs) > 10 else 11)
-        ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1),
-                  borderaxespad=0, frameon=True, fontsize=10)
         ax.grid(linestyle="--", alpha=0.5)
 
+    # Accuracy y-axis fixed 0.0-1.0 so all models are comparable
+    axes[1].set_ylim(0.0, 1.0)
+
+    # Shared legend below both subplots, labels side by side
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels,
+               loc="lower center",
+               ncol=len(histories),
+               fontsize=10,
+               frameon=True,
+               bbox_to_anchor=(0.5, -0.02))
+
     plt.suptitle(title, fontsize=15, fontweight="bold")
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0.06, 1, 1])
     plt.savefig(save, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved: {save}")
