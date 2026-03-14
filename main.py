@@ -227,6 +227,10 @@ def run_transfer_mode(config: TrainingConfig, device: torch.device) -> None:
     plot_training_curves(histories, save_prefix=config.model)
     plot_accuracy_bar(histories,    save_prefix=config.model)
 
+    if config.tsne:
+        for model, opt, label in models_trained:
+            plot_tsne(model, opt, label, device, save_prefix=config.model)
+
 
 
 

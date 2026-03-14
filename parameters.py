@@ -65,6 +65,7 @@ class TrainingConfig:
     weight_decay:  float = 1e-4
 
     # ── Misc ──────────────────────────────────────────────────────────────────
+    tsne:         bool = False   # if True, generate t-SNE plots after transfer learning
     seed:         int = 42
     device:       str = "cpu"
     save_path:    str = "best_model.pth"
@@ -130,6 +131,8 @@ def get_params() -> TrainingConfig:
         help="Distillation temperature T (higher = softer probability distribution)")
     parser.add_argument("--distill_alpha", type=float, default=0.3,
         help="Weight of the soft KD loss; hard CE loss weight = (1 - alpha)")
+    parser.add_argument("--tsne", action="store_true",
+        help="Generate t-SNE feature space plots after transfer learning")
     parser.add_argument("--distill_mode", choices=["standard", "teacher_prob"],
         default="standard",
         help="standard: classic KD  |  teacher_prob: use teacher confidence on true class only")
@@ -169,4 +172,5 @@ def get_params() -> TrainingConfig:
         learning_rate   = args.lr,
         device          = args.device,
         mode            = args.mode,
+        tsne            = args.tsne,
     )
