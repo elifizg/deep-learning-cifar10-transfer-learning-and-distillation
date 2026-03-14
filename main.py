@@ -395,12 +395,12 @@ def run_kd_experiments(config: TrainingConfig, device: torch.device) -> None:
     print("\n  All experiments complete. Generating plots...")
 
     # Auto-generate all comparison plots
-    import importlib.util, sys, os
-    spec = importlib.util.spec_from_file_location(
+    import importlib.util, os
+    spec     = importlib.util.spec_from_file_location(
         "plot_results",
-        os.path.join(os.path.dirname(__file__), "plot_results.py")
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "plot_results.py")
     )
-    plot_mod = importlib.util.load_from_spec(spec)
+    plot_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plot_mod)
     plot_mod.main()
 
