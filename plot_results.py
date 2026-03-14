@@ -127,16 +127,17 @@ def plot_curves(histories: List[dict], title: str, save: str) -> None:
         ["Loss", "Accuracy"],
         ["Training Loss per Epoch", "Validation Accuracy per Epoch"],
     ):
-        ax.set_title(ytitle)
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel(ylabel)
+        ax.set_title(ytitle, fontsize=13)
+        ax.set_xlabel("Epoch", fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=11)
         if epochs:
             ax.set_xticks(epochs)
+            ax.tick_params(axis="x", labelsize=9 if len(epochs) > 10 else 11)
         ax.legend(loc="upper left", bbox_to_anchor=(1.01, 1),
-                  borderaxespad=0, frameon=True)
+                  borderaxespad=0, frameon=True, fontsize=10)
         ax.grid(linestyle="--", alpha=0.5)
 
-    plt.suptitle(title, fontsize=13)
+    plt.suptitle(title, fontsize=15, fontweight="bold")
     plt.tight_layout()
     plt.savefig(save, dpi=150, bbox_inches="tight")
     plt.close()
