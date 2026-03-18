@@ -431,10 +431,28 @@ def run_transfer(
     # Restore best checkpoint then evaluate once on held-out test set.
     model.load_state_dict(best_weights)
     final_test_loss, final_test_acc = evaluate(model, test_loader, criterion, device)
+
+    # best_acc stores the FINAL TEST accuracy for the results table.
+    # The best validation accuracy is preserved separately for logging.
+    best_val_acc     = history.best_acc
     history.best_acc = final_test_acc
 
-    print(f"\nBest val  accuracy : {max(history.test_acc):.4f}")
+    print(f"\nBest val  accuracy : {best_val_acc:.4f}")
     print(f"Final test accuracy: {final_test_acc:.4f}  (held-out, reported once)")
+
+    # Persist history so plot_results.py can load it without re-running training.
+    import json, re
+    fname = "history_" + re.sub(r"[^a-zA-Z0-9]", "_", model_name) + ".json"
+    with open(fname, "w") as f:
+        json.dump({
+            "label":      history.name,
+            "train_loss": history.train_loss,
+            "train_acc":  history.train_acc,
+            "val_acc":    history.test_acc,   # test_acc field holds per-epoch val acc
+            "test_acc":   history.best_acc,
+        }, f, indent=2)
+    print(f"  History saved to: {fname}")
+
     return history
 
 

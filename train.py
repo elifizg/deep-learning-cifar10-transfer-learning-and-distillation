@@ -57,8 +57,10 @@ def get_transforms(config: TrainingConfig, train: bool = True) -> transforms.Com
         ])
 
     # Transfer learning option 1 requires 224x224 to match ImageNet-pretrained conv layers.
+    # Model names can be either the short form ("resnet", "vgg") used in standard training
+    # or the pretrained form ("resnet18", "vgg16") used in transfer learning mode.
     resize_needed: bool = (
-        config.model in ("resnet", "vgg", "mobilenet")
+        config.model in ("resnet", "vgg", "mobilenet", "resnet18", "vgg16")
         and config.transfer_option == 1
     )
 

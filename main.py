@@ -326,9 +326,17 @@ def run_b2b(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b3(config: TrainingConfig, device: torch.device) -> None:
     """B.3 — SimpleCNN student + ResNet teacher (standard KD)."""
+    import os
     from models.CNN import SimpleCNN
+    teacher_path = "best_resnet.pth"
+    if not os.path.exists(teacher_path):
+        raise FileNotFoundError(
+            f"Teacher weights not found: '{teacher_path}'\n"
+            "  Run B.2a first to train and save the ResNet teacher:\n"
+            "      python main.py --mode b2a --epochs 20"
+        )
     teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
-    teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
+    teacher.load_state_dict(torch.load(teacher_path, map_location=device))
     teacher.to(device).eval()
     for p in teacher.parameters():
         p.requires_grad = False
@@ -344,9 +352,17 @@ def run_b3(config: TrainingConfig, device: torch.device) -> None:
 
 def run_b4(config: TrainingConfig, device: torch.device) -> None:
     """B.4 — MobileNet student + ResNet teacher (hybrid teacher_prob KD)."""
+    import os
     from models.mobilenet import MobileNetV2
+    teacher_path = "best_resnet.pth"
+    if not os.path.exists(teacher_path):
+        raise FileNotFoundError(
+            f"Teacher weights not found: '{teacher_path}'\n"
+            "  Run B.2a first to train and save the ResNet teacher:\n"
+            "      python main.py --mode b2a --epochs 20"
+        )
     teacher = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=10)
-    teacher.load_state_dict(torch.load("best_resnet.pth", map_location=device))
+    teacher.load_state_dict(torch.load(teacher_path, map_location=device))
     teacher.to(device).eval()
     for p in teacher.parameters():
         p.requires_grad = False

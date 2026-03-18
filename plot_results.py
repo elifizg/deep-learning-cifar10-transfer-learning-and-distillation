@@ -220,7 +220,7 @@ def main() -> None:
         ("ResNet (no LS)",       ResNet(BasicBlock, [2,2,2,2], num_classes=10),  "best_resnet.pth"),
         ("ResNet (LS=0.1)",      ResNet(BasicBlock, [2,2,2,2], num_classes=10),  "best_resnet_ls.pth"),
         ("SimpleCNN (KD)",       SimpleCNN(num_classes=10),                      "best_cnn_kd.pth"),
-        ("MobileNet (hybrid)",   MobileNetV2(num_classes=10),                    "best_mobilenet_kd.pth"),
+        ("MobileNet (hybrid KD+LS)", MobileNetV2(num_classes=10),                "best_mobilenet_kd.pth"),
     ]
 
     labels, accs, flops_str, flops_num = [], [], [], []
