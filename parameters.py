@@ -141,6 +141,13 @@ def get_params() -> TrainingConfig:
 
     args = parser.parse_args()
 
+    # Transfer learning and KD modes only support CIFAR-10.
+    # Auto-correct dataset so the user doesn't need to pass --dataset cifar10
+    # explicitly when running --mode transfer / kd / b1 / b2a / b2b / b3 / b4.
+    if args.mode in ("transfer", "kd", "b1", "b2a", "b2b", "b3", "b4"):
+        if args.dataset == "mnist":
+            args.dataset = "cifar10"
+
     # ── Dataset-dependent statistics ──────────────────────────────────────────
     # Mean and std are pre-computed from the training split of each dataset.
     # Normalisation: (pixel - mean) / std  ->  roughly N(0, 1) distribution.

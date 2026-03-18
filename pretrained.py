@@ -389,7 +389,7 @@ def run_transfer(
 
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=lr)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.5)
 
     history      = TrainingHistory(name=model_name)
     best_weights = copy.deepcopy(model.state_dict())
