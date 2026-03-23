@@ -1,5 +1,5 @@
 {
-  "label": "MobileNet (hybrid KD+LS)",
+  "label": "MobileNet (hybrid KD, teacher-prob)",
   "train_loss": [
     1.5223921185387506,
     1.1103392461564805,
