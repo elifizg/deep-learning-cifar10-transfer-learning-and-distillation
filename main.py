@@ -373,7 +373,7 @@ def run_b4(config: TrainingConfig, device: torch.device) -> None:
     print(f"  Dataset : cifar10 | Model : MobileNetV2 | Hybrid KD+LS | Device : {device}")
     model = MobileNetV2(num_classes=10).to(device)
     run_training_tracked(model, cfg, device,
-                         label="MobileNet (hybrid KD+LS)", teacher=teacher)
+                         label="MobileNet (hybrid KD, teacher-prob)", teacher=teacher)
     _free_gpu(model, teacher)
 
 
